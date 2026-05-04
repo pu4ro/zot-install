@@ -1,7 +1,7 @@
 .PHONY: help install uninstall status logs restart \
        certs client migrate migrate-dry-run \
        save-image load-image airgap-bundle airgap-install \
-       deploy-k8s clean check
+       deploy-k8s clean check test
 
 SHELL := /bin/bash
 MAKEFLAGS += --no-print-directory
@@ -58,13 +58,12 @@ restart: ## Restart zot container
 
 # ── TLS ─────────────────────────────────────────────────────────────────────
 certs: ## Generate TLS certificates only
-	@sudo ./install.sh --skip-hosts 2>&1 | head -1
-	@echo "Certs generated at $(DATA_DIR)/cert"
+	@sudo ./install.sh --certs-only
 
 # ── Client Setup ────────────────────────────────────────────────────────────
 client: ## Setup client node trust (requires ZOT_IP)
 	@test -n "$(ZOT_IP)" || (echo "ERROR: Set ZOT_IP in .env"; exit 1)
-	@sudo ./client-setup.sh --ip $(ZOT_IP) --ca $(DATA_DIR)/cert/ca.crt --domain $(ZOT_DOMAIN)
+	@sudo ./client-setup.sh --ip $(ZOT_IP) --ca $(DATA_DIR)/cert/ca.crt --domain $(ZOT_DOMAIN) --port $(ZOT_PORT)
 
 # ── Migration ───────────────────────────────────────────────────────────────
 migrate: ## Migrate registry to destination (requires DEST_REGISTRY or DEST_STORAGE)
@@ -81,7 +80,7 @@ save-image: ## Save zot container image to tar file
 	@echo "Pulling and saving $(ZOT_IMAGE)..."
 	@$(RUNTIME) pull $(ZOT_IMAGE)
 	@$(RUNTIME) save -o zot-image.tar $(ZOT_IMAGE)
-	@echo "Saved: zot-image.tar ($(shell du -h zot-image.tar 2>/dev/null | cut -f1))"
+	@echo "Saved: zot-image.tar ($$(du -h zot-image.tar 2>/dev/null | cut -f1))"
 
 load-image: ## Load zot image from tar file
 	@test -f zot-image.tar || (echo "ERROR: zot-image.tar not found. Run 'make save-image' first"; exit 1)
@@ -93,11 +92,10 @@ airgap-bundle: save-image ## Create complete air-gapped bundle (tar.gz)
 	@mkdir -p $(BUNDLE_DIR)
 	@cp install.sh migrate.sh client-setup.sh Makefile .env.example README.md $(BUNDLE_DIR)/
 	@cp zot-image.tar $(BUNDLE_DIR)/
-	@cd $(BUNDLE_DIR) && cp ../.env.example .env.example
 	@tar czf zot-airgap-bundle.tar.gz -C $(BUNDLE_DIR) .
 	@rm -rf $(BUNDLE_DIR)
 	@echo ""
-	@echo "Bundle created: zot-airgap-bundle.tar.gz ($(shell du -h zot-airgap-bundle.tar.gz | cut -f1))"
+	@echo "Bundle created: zot-airgap-bundle.tar.gz ($$(du -h zot-airgap-bundle.tar.gz | cut -f1))"
 	@echo ""
 	@echo "Transfer to air-gapped host and run:"
 	@echo "  tar xzf zot-airgap-bundle.tar.gz -C ./zot-install"
@@ -109,12 +107,17 @@ airgap-install: ## Install in air-gapped mode using local image tar
 	@test -f zot-image.tar || (echo "ERROR: zot-image.tar not found"; exit 1)
 	@sudo ./install.sh --airgap --image-tar ./zot-image.tar
 
+# ── Testing ─────────────────────────────────────────────────────────────────
+test: ## Run BATS unit tests
+	@bats tests/
+
 # ── Utilities ───────────────────────────────────────────────────────────────
 check: ## Validate environment and prerequisites
 	@echo "Checking prerequisites..."
 	@echo -n "  Container runtime: "; command -v nerdctl || command -v docker || command -v podman || echo "NOT FOUND"
 	@echo -n "  openssl: "; command -v openssl || echo "NOT FOUND"
 	@echo -n "  curl: "; command -v curl || echo "NOT FOUND"
+	@echo -n "  jq: "; command -v jq || echo "NOT FOUND"
 	@test -f .env && echo "  .env: found" || echo "  .env: NOT FOUND (copy from .env.example)"
 	@test -n "$(ZOT_IP)" && echo "  ZOT_IP: $(ZOT_IP)" || echo "  ZOT_IP: NOT SET (required)"
 	@echo "  ZOT_DOMAIN: $(ZOT_DOMAIN)"

@@ -12,32 +12,11 @@ set -euo pipefail
 #   4. oras       : OCI artifact-aware copy (preserves referrers/signatures)
 ###############################################################################
 
-# ── Load .env if present ────────────────────────────────────────────────────
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/.env" ]]; then
-  set -a
-  # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/.env"
-  set +a
-fi
-
 RED='\033[0;31m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'; BLUE='\033[0;34m'; NC='\033[0m'
 info()  { echo -e "${GREEN}[INFO]${NC}  $*"; }
 warn()  { echo -e "${YELLOW}[WARN]${NC}  $*"; }
 error() { echo -e "${RED}[ERROR]${NC} $*"; exit 1; }
 step()  { echo -e "\n${BLUE}══════ $* ══════${NC}"; }
-
-# ── Defaults ────────────────────────────────────────────────────────────────
-SOURCE_REGISTRY="${SOURCE_REGISTRY:-cr.makina.rocks}"
-DEST_REGISTRY="${DEST_REGISTRY:-}"
-STRATEGY="${STRATEGY:-skopeo}"
-SOURCE_STORAGE="${SOURCE_STORAGE:-/data/zot}"
-DEST_STORAGE="${DEST_STORAGE:-}"
-SOURCE_CA="${SOURCE_CA:-/data/cert/ca.crt}"
-DEST_CA="${DEST_CA:-}"
-NAMESPACE="${NAMESPACE:-zot-registry}"
-DRY_RUN=false
-HELM_VALUES=""
 
 usage() {
   cat <<'EOF'
@@ -80,25 +59,6 @@ EOF
   exit 0
 }
 
-DEPLOY_K8S=false
-while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --source)         SOURCE_REGISTRY="$2"; shift 2 ;;
-    --dest)           DEST_REGISTRY="$2"; shift 2 ;;
-    --strategy)       STRATEGY="$2"; shift 2 ;;
-    --source-storage) SOURCE_STORAGE="$2"; shift 2 ;;
-    --dest-storage)   DEST_STORAGE="$2"; shift 2 ;;
-    --source-ca)      SOURCE_CA="$2"; shift 2 ;;
-    --dest-ca)        DEST_CA="$2"; shift 2 ;;
-    --namespace)      NAMESPACE="$2"; shift 2 ;;
-    --dry-run)        DRY_RUN=true; shift ;;
-    --deploy-k8s)     DEPLOY_K8S=true; shift ;;
-    --helm-values)    HELM_VALUES="$2"; shift 2 ;;
-    -h|--help)        usage ;;
-    *)                error "Unknown option: $1" ;;
-  esac
-done
-
 # ── Validation ──────────────────────────────────────────────────────────────
 check_tool() {
   command -v "$1" >/dev/null 2>&1 || error "'$1' is required but not found. Install it first."
@@ -108,10 +68,10 @@ check_tool() {
 migrate_skopeo() {
   step "Migration via skopeo sync"
   check_tool skopeo
+  check_tool jq
 
   [[ -n "$DEST_REGISTRY" ]] || error "--dest is required for skopeo strategy"
 
-  # Get list of all repositories from source
   info "Fetching repository catalog from ${SOURCE_REGISTRY}..."
 
   local catalog_url="https://${SOURCE_REGISTRY}/v2/_catalog"
@@ -119,12 +79,7 @@ migrate_skopeo() {
   [[ -f "$SOURCE_CA" ]] && tls_flag="--cacert ${SOURCE_CA}"
 
   local repos
-  repos=$(curl -sk ${tls_flag} "${catalog_url}" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for r in data.get('repositories', []):
-    print(r)
-" 2>/dev/null || true)
+  repos=$(curl -sk ${tls_flag} "${catalog_url}" | jq -r '.repositories[]' 2>/dev/null || true)
 
   if [[ -z "$repos" ]]; then
     warn "No repositories found or catalog API unavailable."
@@ -243,7 +198,6 @@ EOF
 
   info "Sync config generated at: ${sync_config_dir}/config.json"
 
-  # Generate Helm values for K8s deployment
   cat > "${sync_config_dir}/helm-values.yaml" <<EOF
 # Zot K8s Deployment with Sync from temporary registry
 # Source: ${SOURCE_REGISTRY}
@@ -294,7 +248,6 @@ EOF
     check_tool helm
     check_tool kubectl
 
-    # Copy source CA to K8s as a secret (so zot can verify the temp registry)
     if [[ -f "$SOURCE_CA" ]]; then
       info "Creating source CA secret..."
       if [[ "$DRY_RUN" == true ]]; then
@@ -326,18 +279,13 @@ EOF
 
     cat <<EOF
 
-  ┌──────────────────────────────────────────────────────────────┐
-  │  Sync will start automatically.                              │
-  │  Monitor progress:                                           │
-  │    kubectl -n ${NAMESPACE} logs -f deploy/zot              │
-  │                                                              │
-  │  Once sync is complete, update DNS/ingress to point to       │
-  │  the K8s registry and decommission the temp registry:        │
-  │    ./install.sh --uninstall                                  │
-  │                                                              │
-  │  To disable sync after migration, remove the sync extension  │
-  │  from the config and restart the pod.                        │
-  └──────────────────────────────────────────────────────────────┘
+  Sync will start automatically.
+  Monitor: kubectl -n ${NAMESPACE} logs -f deploy/zot
+
+  Once sync is complete:
+    1. Update DNS/ingress to point to K8s registry
+    2. Decommission temp registry: ./install.sh --uninstall
+    3. Remove sync extension from config and restart pod
 EOF
   else
     cat <<EOF
@@ -390,6 +338,7 @@ migrate_filesystem() {
 migrate_oras() {
   step "Migration via ORAS"
   check_tool oras
+  check_tool jq
 
   [[ -n "$DEST_REGISTRY" ]] || error "--dest is required for oras strategy"
 
@@ -400,12 +349,7 @@ migrate_oras() {
   [[ -f "$SOURCE_CA" ]] && tls_flag="--cacert ${SOURCE_CA}"
 
   local repos
-  repos=$(curl -sk ${tls_flag} "${catalog_url}" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for r in data.get('repositories', []):
-    print(r)
-" 2>/dev/null || true)
+  repos=$(curl -sk ${tls_flag} "${catalog_url}" | jq -r '.repositories[]' 2>/dev/null || true)
 
   if [[ -z "$repos" ]]; then
     error "No repositories found. Check source registry connectivity."
@@ -420,15 +364,9 @@ for r in data.get('repositories', []):
     [[ -z "$repo" ]] && continue
     count=$((count + 1))
 
-    # Get tags for this repo
     local tags_url="https://${SOURCE_REGISTRY}/v2/${repo}/tags/list"
     local tags
-    tags=$(curl -sk ${tls_flag} "${tags_url}" | python3 -c "
-import sys, json
-data = json.load(sys.stdin)
-for t in data.get('tags', []):
-    print(t)
-" 2>/dev/null || true)
+    tags=$(curl -sk ${tls_flag} "${tags_url}" | jq -r '.tags[]' 2>/dev/null || true)
 
     if [[ -z "$tags" ]]; then
       warn "[${count}/${total}] ${repo}: no tags found, skipping"
@@ -453,14 +391,61 @@ for t in data.get('tags', []):
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
-step "Zot Registry Migration (${STRATEGY})"
-info "Source: ${SOURCE_REGISTRY}"
-info "Destination: ${DEST_REGISTRY:-${DEST_STORAGE:-<not set>}}"
+main() {
+  # ── Load .env if present ──
+  local SCRIPT_DIR
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+    set -a
+    # shellcheck source=/dev/null
+    source "${SCRIPT_DIR}/.env"
+    set +a
+  fi
 
-case "$STRATEGY" in
-  skopeo)     migrate_skopeo ;;
-  zot-sync)   migrate_zot_sync ;;
-  filesystem) migrate_filesystem ;;
-  oras)       migrate_oras ;;
-  *)          error "Unknown strategy: ${STRATEGY}. Use: skopeo, zot-sync, filesystem, oras" ;;
-esac
+  # ── Defaults ──
+  SOURCE_REGISTRY="${SOURCE_REGISTRY:-cr.makina.rocks}"
+  DEST_REGISTRY="${DEST_REGISTRY:-}"
+  STRATEGY="${STRATEGY:-skopeo}"
+  SOURCE_STORAGE="${SOURCE_STORAGE:-/data/zot}"
+  DEST_STORAGE="${DEST_STORAGE:-}"
+  SOURCE_CA="${SOURCE_CA:-/data/cert/ca.crt}"
+  DEST_CA="${DEST_CA:-}"
+  NAMESPACE="${NAMESPACE:-zot-registry}"
+  DRY_RUN=false
+  HELM_VALUES=""
+  DEPLOY_K8S=false
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --source)         SOURCE_REGISTRY="$2"; shift 2 ;;
+      --dest)           DEST_REGISTRY="$2"; shift 2 ;;
+      --strategy)       STRATEGY="$2"; shift 2 ;;
+      --source-storage) SOURCE_STORAGE="$2"; shift 2 ;;
+      --dest-storage)   DEST_STORAGE="$2"; shift 2 ;;
+      --source-ca)      SOURCE_CA="$2"; shift 2 ;;
+      --dest-ca)        DEST_CA="$2"; shift 2 ;;
+      --namespace)      NAMESPACE="$2"; shift 2 ;;
+      --dry-run)        DRY_RUN=true; shift ;;
+      --deploy-k8s)     DEPLOY_K8S=true; shift ;;
+      --helm-values)    HELM_VALUES="$2"; shift 2 ;;
+      -h|--help)        usage ;;
+      *)                error "Unknown option: $1" ;;
+    esac
+  done
+
+  step "Zot Registry Migration (${STRATEGY})"
+  info "Source: ${SOURCE_REGISTRY}"
+  info "Destination: ${DEST_REGISTRY:-${DEST_STORAGE:-<not set>}}"
+
+  case "$STRATEGY" in
+    skopeo)     migrate_skopeo ;;
+    zot-sync)   migrate_zot_sync ;;
+    filesystem) migrate_filesystem ;;
+    oras)       migrate_oras ;;
+    *)          error "Unknown strategy: ${STRATEGY}. Use: skopeo, zot-sync, filesystem, oras" ;;
+  esac
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  main "$@"
+fi
