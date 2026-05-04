@@ -1,130 +1,131 @@
 # Zot Registry Installer
 
-Runway 2.0 배포를 위한 임시 OCI 레지스트리(Zot) 자동 설치 도구.
-K8s 설치 전 임시 registry로 사용하고, K8s 설치 후 영구 registry로 마이그레이션.
+> 한국어 문서: [README.ko.md](README.ko.md)
 
-## 기능
+Automated OCI registry (Zot) deployment tool for Runway 2.0. Use as a temporary registry before K8s installation, then migrate to a permanent registry after K8s is set up.
+
+## Features
 
 - Container image push/pull
 - OCI Helm chart push/pull
-- TLS 자동 생성
+- Automatic TLS certificate generation
 - Cross-OS: Ubuntu/Debian, RHEL/CentOS/Rocky, SLES, macOS
 - Cross-runtime: docker, nerdctl (containerd), podman
-- Air-gapped 환경 지원
-- K8s 마이그레이션 (4가지 전략)
+- Air-gapped environment support
+- K8s migration (4 strategies)
 
 ## Quick Start
 
 ```bash
-# 1. 환경 설정
+# 1. Configure environment
 cp .env.example .env
-vi .env                # ZOT_IP 필수 입력
+vi .env                # ZOT_IP is required
 
-# 2. 사전 체크
+# 2. Pre-flight check
 make check
 
-# 3. 설치
+# 3. Install
 make install
 
-# 4. 확인
+# 4. Verify
 make status
 ```
 
-## 명령어 (Makefile)
+## Commands (Makefile)
 
-| 명령어 | 설명 |
+| Command | Description |
 |---|---|
-| `make help` | 전체 명령어 목록 |
-| `make install` | Zot 레지스트리 설치 |
-| `make uninstall` | 제거 |
-| `make status` | 상태 확인 + catalog 조회 |
-| `make logs` | 컨테이너 로그 |
-| `make restart` | 재시작 |
-| `make client` | 클라이언트 노드 TLS 신뢰 설정 |
-| `make migrate` | K8s 레지스트리로 마이그레이션 |
-| `make migrate-dry-run` | 마이그레이션 미리보기 |
-| `make deploy-k8s` | K8s에 Zot Helm 배포 + 자동 sync |
-| `make save-image` | Zot 이미지를 tar로 저장 |
-| `make airgap-bundle` | Air-gapped 전체 번들 생성 |
-| `make airgap-install` | Air-gapped 모드 설치 |
-| `make check` | 환경 검증 |
-| `make clean` | 생성 파일 정리 |
+| `make help` | List all available commands |
+| `make install` | Install Zot registry |
+| `make uninstall` | Remove Zot registry |
+| `make status` | Show status and catalog |
+| `make logs` | Show container logs |
+| `make restart` | Restart the registry |
+| `make client` | Configure TLS trust on client nodes |
+| `make migrate` | Migrate to K8s registry |
+| `make migrate-dry-run` | Preview migration (dry run) |
+| `make deploy-k8s` | Deploy Zot via Helm on K8s with auto-sync |
+| `make save-image` | Save Zot image to a tar archive |
+| `make airgap-bundle` | Create a full air-gapped bundle |
+| `make airgap-install` | Install in air-gapped mode |
+| `make check` | Validate environment prerequisites |
+| `make clean` | Remove generated files |
 
-## 환경 설정 (.env)
+## Configuration (.env)
 
 ```bash
 cp .env.example .env
 ```
 
-주요 변수:
+Key variables:
 
-| 변수 | 기본값 | 설명 |
+| Variable | Default | Description |
 |---|---|---|
-| `ZOT_IP` | (필수) | 서버 IP 주소 |
-| `ZOT_DOMAIN` | `cr.makina.rocks` | 레지스트리 도메인 |
-| `ZOT_PORT` | `443` | 호스트 포트 |
-| `DATA_DIR` | `/data` | 데이터 디렉토리 |
-| `ZOT_IMAGE` | `ghcr.io/project-zot/zot:latest` | 컨테이너 이미지 |
-| `AIRGAP` | `false` | Air-gapped 모드 |
-| `ZOT_IMAGE_TAR` | - | Air-gapped용 이미지 tar 경로 |
+| `ZOT_IP` | (required) | Server IP address |
+| `ZOT_DOMAIN` | `cr.makina.rocks` | Registry domain |
+| `ZOT_PORT` | `443` | Host port |
+| `DATA_DIR` | `/data` | Data directory |
+| `ZOT_IMAGE` | `ghcr.io/project-zot/zot:latest` | Container image |
+| `AIRGAP` | `false` | Air-gapped mode |
+| `ZOT_IMAGE_TAR` | - | Path to image tar for air-gapped use |
 
-전체 변수 목록은 [.env.example](.env.example) 참조.
+For the full list of variables, see [.env.example](.env.example).
 
-## Air-Gapped 환경
+## Air-Gapped Deployment
 
-### 번들 생성 (인터넷 가능한 호스트에서)
+### Bundle Creation (on internet-connected host)
 
 ```bash
-# 이미지 다운로드 + 번들 패키징
+# Download image and package the bundle
 make airgap-bundle
-# -> zot-airgap-bundle.tar.gz 생성
+# -> produces zot-airgap-bundle.tar.gz
 ```
 
-### 설치 (Air-gapped 호스트에서)
+### Installation (on air-gapped host)
 
 ```bash
-# 1. 번들 전송 후 압축 해제
+# 1. Transfer the bundle and extract it
 tar xzf zot-airgap-bundle.tar.gz -C ./zot-install
 cd zot-install
 
-# 2. 환경 설정
+# 2. Configure environment
 cp .env.example .env
-vi .env    # ZOT_IP, AIRGAP=true 설정
+vi .env    # Set ZOT_IP and AIRGAP=true
 
-# 3. 설치
+# 3. Install
 make airgap-install
 ```
 
-### 수동 설치 (번들 없이)
+### Manual Installation (without bundle)
 
 ```bash
-# 인터넷 호스트에서 이미지 저장
+# Save the image on an internet-connected host
 nerdctl pull ghcr.io/project-zot/zot:latest
 nerdctl save -o zot-image.tar ghcr.io/project-zot/zot:latest
 
-# Air-gapped 호스트로 전송 후
+# Transfer to the air-gapped host, then run
 sudo ./install.sh --airgap --image-tar ./zot-image.tar --ip 192.168.135.121
 ```
 
-## 클라이언트 노드 설정
+## Client Node Setup
 
-각 워커 노드에서 레지스트리를 신뢰하도록 설정:
+Configure each worker node to trust the registry:
 
 ```bash
-# Zot 서버에서 ca.crt를 클라이언트로 복사
+# Copy ca.crt from the Zot server to the client
 scp root@<ZOT_IP>:/data/cert/ca.crt ./ca.crt
 
-# 클라이언트에서 실행
+# Run on the client node
 sudo ./client-setup.sh --ip <ZOT_IP> --ca ./ca.crt
 ```
 
-설정 항목:
-- `/etc/hosts` 등록
-- OS별 시스템 CA 신뢰 추가
-- containerd `certs.d` 설정
-- Docker `certs.d` 설정 (있는 경우)
+The setup script handles:
+- `/etc/hosts` entry registration
+- OS-level system CA trust addition
+- containerd `certs.d` configuration
+- Docker `certs.d` configuration (if Docker is present)
 
-## 사용 예시
+## Usage Examples
 
 ### Container Image Push/Pull
 
@@ -149,54 +150,54 @@ helm pull oci://cr.makina.rocks/charts/mychart --version 1.0.0
 
 ### Web UI
 
-브라우저에서 `https://<ZOT_IP>` 접속.
+Open `https://<ZOT_IP>` in your browser.
 
-## K8s 마이그레이션
+## K8s Migration
 
-K8s 클러스터 설치 후 임시 레지스트리에서 영구 레지스트리로 마이그레이션:
+After the K8s cluster is up, migrate from the temporary registry to a permanent one:
 
-### 전략 1: skopeo sync (권장)
+### Strategy 1: skopeo sync (recommended)
 
-모든 이미지와 Helm chart를 일괄 복사.
+Bulk-copies all images and Helm charts.
 
 ```bash
-# .env에 설정
+# Set in .env
 DEST_REGISTRY=harbor.example.com
 STRATEGY=skopeo
 
-# 미리보기
+# Preview
 make migrate-dry-run
 
-# 실행
+# Execute
 make migrate
 ```
 
-### 전략 2: zot-sync (무중단)
+### Strategy 2: zot-sync (zero-downtime)
 
-K8s에 새 Zot을 배포하고 내장 sync 확장으로 자동 복제.
+Deploys a new Zot instance on K8s and replicates automatically using the built-in sync extension.
 
 ```bash
 DEST_REGISTRY=zot-k8s.example.com
 STRATEGY=zot-sync
 
-# K8s에 자동 배포 + sync 설정
+# Auto-deploy to K8s and configure sync
 make deploy-k8s
 
-# sync 완료 후 DNS 전환 -> 임시 레지스트리 제거
+# After sync completes, switch DNS -> remove the temporary registry
 make uninstall
 ```
 
-### 전략 3: filesystem (가장 빠름)
+### Strategy 3: filesystem (fastest)
 
-OCI 스토리지 디렉토리를 직접 rsync. Zot -> Zot 전용.
+Directly rsyncs the OCI storage directory. Zot-to-Zot only.
 
 ```bash
 ./migrate.sh --strategy filesystem --dest-storage /mnt/k8s-pv/zot
 ```
 
-### 전략 4: oras (서명/SBOM 보존)
+### Strategy 4: oras (preserves signatures/SBOM)
 
-Cosign 서명, SBOM 등 referrer 체인까지 보존.
+Preserves the full referrer chain, including Cosign signatures and SBOMs.
 
 ```bash
 DEST_REGISTRY=harbor.example.com
@@ -205,30 +206,55 @@ STRATEGY=oras
 make migrate
 ```
 
-### 전략 비교
+### Strategy Comparison
 
-| 전략 | 속도 | 무중단 | referrer 보존 | 외부 도구 |
+| Strategy | Speed | Zero-downtime | Referrer Preservation | External Tools |
 |---|---|---|---|---|
-| skopeo | 빠름 | X | X | skopeo |
-| zot-sync | 보통 | O | O | 없음 (내장) |
-| filesystem | 가장 빠름 | X | O | rsync |
-| oras | 보통 | X | O | oras |
+| skopeo | Fast | No | No | skopeo |
+| zot-sync | Medium | Yes | Yes | None (built-in) |
+| filesystem | Fastest | No | Yes | rsync |
+| oras | Medium | No | Yes | oras |
 
-## 디렉토리 구조
+## Directory Structure
 
 ```
 zot-install/
-├── .env.example      # 환경 변수 템플릿
-├── .env              # 환경 변수 (git-ignored)
-├── Makefile          # Make 명령어
-├── README.md         # 이 문서
-├── install.sh        # 메인 설치 스크립트
-├── migrate.sh        # K8s 마이그레이션 스크립트
-└── client-setup.sh   # 클라이언트 노드 설정 스크립트
+├── .env.example          # Configuration template
+├── .env                  # Local config (git-ignored)
+├── .gitignore
+├── CHANGELOG.md          # Release history
+├── CONTRIBUTING.md       # Contributor guide
+├── LICENSE               # Apache 2.0
+├── Makefile              # Command entry points
+├── README.md             # This document (English)
+├── README.ko.md          # Korean documentation
+├── install.sh            # Main installer script
+├── migrate.sh            # K8s migration script
+├── client-setup.sh       # Client node trust setup
+├── docs/                 # Extended documentation
+│   ├── ARCHITECTURE.md   # System architecture & flow diagrams
+│   ├── TESTING.md        # Test suite documentation
+│   └── TROUBLESHOOTING.md # Common issues & solutions
+└── tests/                # BATS test suite
+    ├── ci/
+    │   └── matrix.yml    # GitHub Actions CI config
+    ├── install/          # install.sh tests
+    ├── migrate/          # migrate.sh tests
+    ├── client_setup/     # client-setup.sh tests
+    ├── makefile/         # Makefile target tests
+    ├── integration/      # Integration test suite
+    └── test_helper/      # Shared test utilities
 ```
 
-## 참고
+## License
 
-- [Zot 공식 문서](https://zotregistry.dev/)
+This project is licensed under the Apache License 2.0 -- see the [LICENSE](LICENSE) file for details.
+
+## References
+
+- [Zot Official Documentation](https://zotregistry.dev/)
 - [Zot Sync/Mirroring](https://zotregistry.dev/v2.1.15/articles/mirroring/)
 - [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Testing Guide](docs/TESTING.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
