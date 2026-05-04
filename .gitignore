@@ -1,0 +1,4 @@
+.env
+*.tar
+*.tar.gz
+airgap-bundle/
