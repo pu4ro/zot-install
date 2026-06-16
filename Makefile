@@ -1,4 +1,4 @@
-.PHONY: help install uninstall status logs restart \
+.PHONY: help install uninstall status logs restart enable disable \
        certs client migrate migrate-dry-run \
        save-image load-image airgap-bundle airgap-install \
        deploy-k8s clean check test
@@ -45,16 +45,36 @@ install: check ## Install zot registry
 uninstall: ## Remove zot registry and data
 	@sudo ./install.sh --uninstall
 
-status: ## Show zot container status
-	@$(RUNTIME) inspect zot --format '{{.State.Status}}' 2>/dev/null || echo "not running"
+status: ## Show zot status (systemd unit if present, else container)
+	@if systemctl cat zot.service >/dev/null 2>&1; then \
+		systemctl --no-pager status zot.service || true; \
+	else \
+		$(RUNTIME) inspect zot --format '{{.State.Status}}' 2>/dev/null || echo "not running"; \
+	fi
 	@echo "---"
 	@curl -sk https://$(ZOT_DOMAIN):$(ZOT_PORT)/v2/_catalog 2>/dev/null || echo "API unreachable"
 
-logs: ## Show zot container logs
-	@$(RUNTIME) logs -f zot
+logs: ## Show zot logs (journald if systemd-managed, else container)
+	@if systemctl cat zot.service >/dev/null 2>&1; then \
+		journalctl -u zot.service -f; \
+	else \
+		$(RUNTIME) logs -f zot; \
+	fi
 
-restart: ## Restart zot container
-	@$(RUNTIME) restart zot
+restart: ## Restart zot (via systemd if managed, else container)
+	@if systemctl cat zot.service >/dev/null 2>&1; then \
+		sudo systemctl restart zot.service; \
+	else \
+		$(RUNTIME) restart zot; \
+	fi
+
+enable: ## Enable zot to start on boot (systemd)
+	@systemctl cat zot.service >/dev/null 2>&1 || { echo "zot.service not found (systemd-managed install required)"; exit 1; }
+	@sudo systemctl enable --now zot.service
+
+disable: ## Disable zot from starting on boot (systemd)
+	@systemctl cat zot.service >/dev/null 2>&1 || { echo "zot.service not found (systemd-managed install required)"; exit 1; }
+	@sudo systemctl disable zot.service
 
 # ── TLS ─────────────────────────────────────────────────────────────────────
 certs: ## Generate TLS certificates only

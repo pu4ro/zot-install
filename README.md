@@ -11,6 +11,7 @@ Automated OCI registry (Zot) deployment tool for Runway 2.0. Use as a temporary 
 - Automatic TLS certificate generation
 - Cross-OS: Ubuntu/Debian, RHEL/CentOS/Rocky, SLES, macOS
 - Cross-runtime: docker, nerdctl (containerd), podman
+- systemd-managed service (`zot.service`): auto-restart and survives reboot
 - Air-gapped environment support
 - K8s migration (4 strategies)
 
@@ -38,9 +39,11 @@ make status
 | `make help` | List all available commands |
 | `make install` | Install Zot registry |
 | `make uninstall` | Remove Zot registry |
-| `make status` | Show status and catalog |
-| `make logs` | Show container logs |
-| `make restart` | Restart the registry |
+| `make status` | Show service/container status and catalog |
+| `make logs` | Follow logs (journald if systemd-managed) |
+| `make restart` | Restart the registry (via systemd if managed) |
+| `make enable` | Enable the service to start on boot (systemd) |
+| `make disable` | Disable the service from starting on boot (systemd) |
 | `make client` | Configure TLS trust on client nodes |
 | `make migrate` | Migrate to K8s registry |
 | `make migrate-dry-run` | Preview migration (dry run) |
@@ -50,6 +53,31 @@ make status
 | `make airgap-install` | Install in air-gapped mode |
 | `make check` | Validate environment prerequisites |
 | `make clean` | Remove generated files |
+
+## Service Management (systemd)
+
+On Linux hosts, the installer registers a systemd unit (`zot.service`) that owns
+the container lifecycle. It is enabled on boot and uses `Restart=always`, so the
+registry comes back automatically after a crash or reboot.
+
+What the installer configures to guarantee reboot survival:
+
+- Enables the container runtime daemon on boot (`docker.service` / `containerd.service`; podman is daemonless).
+- `Requires=`/`After=` the runtime daemon so the container only starts once it is ready.
+- `RequiresMountsFor=` the data and cert directories, avoiding a race when they live on a separate or network mount.
+- `WantedBy=multi-user.target` + `systemctl enable zot.service`.
+
+Manage it directly with systemd:
+
+```bash
+systemctl status zot          # current state
+systemctl restart zot         # restart
+systemctl stop zot            # stop (won't auto-restart until started again)
+journalctl -u zot -f          # follow logs
+```
+
+On hosts without systemd (e.g. macOS), the installer falls back to the runtime's
+own `--restart=always` policy.
 
 ## Configuration (.env)
 

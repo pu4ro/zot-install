@@ -118,6 +118,14 @@ do_uninstall() {
   detect_runtime
   step "Uninstalling Zot Registry"
 
+  if command -v systemctl >/dev/null 2>&1 && systemctl cat zot.service >/dev/null 2>&1; then
+    info "Stopping and disabling zot.service..."
+    systemctl disable --now zot.service >/dev/null 2>&1 || true
+    rm -f /etc/systemd/system/zot.service
+    systemctl daemon-reload
+    info "systemd unit removed"
+  fi
+
   info "Stopping and removing zot container..."
   ${RUNTIME} rm -f zot 2>/dev/null || true
 
@@ -199,6 +207,110 @@ configure_system_ca() {
       ;;
   esac
   info "System CA trust updated"
+}
+
+# ── systemd service ─────────────────────────────────────────────────────────
+SERVICE_NAME="zot.service"
+SERVICE_PATH="/etc/systemd/system/${SERVICE_NAME}"
+
+# True when running under a usable systemd (Linux + systemctl + booted with systemd)
+have_systemd() {
+  [[ "$(uname)" == "Linux" ]] \
+    && command -v systemctl >/dev/null 2>&1 \
+    && [[ -d /run/systemd/system ]]
+}
+
+# Common container run arguments shared by systemd and direct-run modes.
+# Intentionally excludes -d / --rm / --restart so each caller can add what it needs.
+build_run_args() {
+  RUN_ARGS=(
+    --name zot
+    -p "${ZOT_PORT}:${ZOT_INTERNAL_PORT}"
+    -v "${ZOT_STORAGE}:/var/lib/registry"
+    -v "${CERT_DIR}:/certs:ro"
+    -v "${ZOT_STORAGE}/config.json:/etc/zot/config.json:ro"
+    "${ZOT_IMAGE}"
+    serve /etc/zot/config.json
+  )
+}
+
+# Ensure the runtime's own daemon starts on boot, otherwise no container can
+# come back up after a reboot regardless of the zot unit. Podman is daemonless.
+enable_runtime_daemon() {
+  local daemon_dep="$1"
+  [[ -n "${daemon_dep}" ]] || return 0
+  if systemctl is-enabled "${daemon_dep}" >/dev/null 2>&1; then
+    info "${daemon_dep} already enabled on boot"
+  elif systemctl enable "${daemon_dep}" >/dev/null 2>&1; then
+    info "Enabled ${daemon_dep} on boot"
+  else
+    warn "Could not enable ${daemon_dep} on boot — container may not start after reboot"
+  fi
+}
+
+# Generate, enable and start a systemd unit that owns the container lifecycle.
+setup_service() {
+  local runtime_bin daemon_dep after_line requires_line
+  runtime_bin="$(command -v "${RUNTIME}")"
+
+  # Boot-time daemon the runtime depends on (podman is daemonless).
+  case "${RUNTIME}" in
+    docker)  daemon_dep="docker.service" ;;
+    nerdctl) daemon_dep="containerd.service" ;;
+    *)       daemon_dep="" ;;
+  esac
+
+  enable_runtime_daemon "${daemon_dep}"
+
+  after_line="network-online.target"
+  requires_line=""
+  if [[ -n "${daemon_dep}" ]]; then
+    after_line="${after_line} ${daemon_dep}"
+    requires_line="Requires=${daemon_dep}"
+  fi
+
+  build_run_args
+
+  info "Writing systemd unit: ${SERVICE_PATH}"
+  cat > "${SERVICE_PATH}" <<EOF
+[Unit]
+Description=Zot OCI Registry
+Documentation=https://zotregistry.dev
+Wants=network-online.target
+After=${after_line}
+${requires_line}
+RequiresMountsFor=${ZOT_STORAGE} ${CERT_DIR}
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+# Clear any leftover container before each (re)start
+ExecStartPre=-${runtime_bin} rm -f zot
+ExecStart=${runtime_bin} run --rm ${RUN_ARGS[*]}
+ExecStop=${runtime_bin} stop zot
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  systemctl daemon-reload
+  if systemctl enable "${SERVICE_NAME}" >/dev/null 2>&1; then
+    info "Service enabled to start on boot"
+  else
+    warn "Could not enable ${SERVICE_NAME} for boot"
+  fi
+  systemctl restart "${SERVICE_NAME}"
+  info "Service started via systemd (Restart=always)"
+}
+
+# Fallback for hosts without systemd (e.g. macOS): rely on the runtime's
+# own restart policy instead of a unit file.
+run_container_direct() {
+  build_run_args
+  warn "systemd not available — using runtime restart policy (--restart=always)"
+  "${RUNTIME}" run -d --restart=always "${RUN_ARGS[@]}"
 }
 
 # ── Main ────────────────────────────────────────────────────────────────────
@@ -382,7 +494,15 @@ EOF
 EOF
   info "Config written to ${ZOT_STORAGE}/config.json"
 
-  # ── Check existing container ──
+  # ── Check existing installation ──
+  if have_systemd && systemctl cat "${SERVICE_NAME}" >/dev/null 2>&1; then
+    if [[ "$FORCE" == true ]]; then
+      warn "Existing zot service found. Removing (--force)..."
+      systemctl disable --now "${SERVICE_NAME}" >/dev/null 2>&1 || true
+    else
+      error "Zot service already exists. Use --force to overwrite or --uninstall first."
+    fi
+  fi
   if ${RUNTIME} inspect zot >/dev/null 2>&1; then
     if [[ "$FORCE" == true ]]; then
       warn "Existing zot container found. Removing (--force)..."
@@ -403,23 +523,14 @@ EOF
     info "Image loaded from ${ZOT_IMAGE_TAR}"
   fi
 
-  # ── Run Zot Container ──
-  step "Starting Zot Container"
+  # ── Run Zot (systemd-managed when available) ──
+  step "Starting Zot"
 
-  RUN_CMD=(
-    "${RUNTIME}" run -d
-    --name zot
-    --restart=unless-stopped
-    -p "${ZOT_PORT}:${ZOT_INTERNAL_PORT}"
-    -v "${ZOT_STORAGE}:/var/lib/registry"
-    -v "${CERT_DIR}:/certs:ro"
-    -v "${ZOT_STORAGE}/config.json:/etc/zot/config.json:ro"
-    "${ZOT_IMAGE}"
-    serve /etc/zot/config.json
-  )
-
-  info "Running: ${RUN_CMD[*]}"
-  "${RUN_CMD[@]}"
+  if have_systemd; then
+    setup_service
+  else
+    run_container_direct
+  fi
 
   # Wait for startup
   info "Waiting for zot to start..."
@@ -449,7 +560,16 @@ EOF
   Runtime:       ${RUNTIME}
   Data Dir:      ${ZOT_STORAGE}
   Certs Dir:     ${CERT_DIR}
+$(if have_systemd; then cat <<SVC
 
+  Service:       ${SERVICE_NAME} (enabled on boot, Restart=always)
+
+  Service commands:
+    systemctl status zot
+    systemctl restart zot
+    journalctl -u zot -f
+SVC
+fi)
   Test commands:
     # Check API
     curl -sk https://${ZOT_DOMAIN}/v2/_catalog
