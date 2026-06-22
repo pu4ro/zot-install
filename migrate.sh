@@ -33,11 +33,14 @@ Required:
 
 Options:
   --source REGISTRY       Source registry               (default: cr.makina.rocks)
+  --src-creds USER:PASS   Source registry credentials    (e.g. Harbor login)
+  --dest-creds USER:PASS  Destination registry credentials
   --source-storage DIR    Source storage directory       (default: /data/zot)
   --source-ca PATH        Source CA cert path            (default: /data/cert/ca.crt)
   --dest-storage DIR      Destination storage path       (for filesystem strategy)
   --dest-ca PATH          Destination CA cert path
   --namespace NS          K8s namespace                  (default: zot-registry)
+  --insecure              Skip TLS verify on src/dest     (self-signed / HTTP test registries)
   --dry-run               Preview actions without executing
   --deploy-k8s            Deploy zot on K8s with Helm (includes sync config)
   --helm-values FILE      Custom Helm values file
@@ -46,6 +49,11 @@ Options:
 Examples:
   # Skopeo bulk copy (most common)
   ./migrate.sh --strategy skopeo --dest harbor.example.com
+
+  # Harbor -> zot, images only, with Harbor read credentials
+  ./migrate.sh --strategy skopeo \
+    --source harbor.example.com --src-creds robot$puller:TOKEN \
+    --dest   zot.example.com    --dest-creds admin:zotpass
 
   # Deploy zot on K8s with built-in sync from temp registry
   ./migrate.sh --strategy zot-sync --dest zot-k8s.example.com --deploy-k8s
@@ -64,6 +72,42 @@ check_tool() {
   command -v "$1" >/dev/null 2>&1 || error "'$1' is required but not found. Install it first."
 }
 
+# ── Catalog fetch (auth + pagination aware) ──────────────────────────────────
+# Harbor returns _catalog in pages and requires auth for private projects.
+# Echoes one repository path per line, sorted/unique.
+fetch_catalog() {
+  local registry="$1"
+  local curl_args=(-sk)
+  [[ -f "$SOURCE_CA" ]] && curl_args+=(--cacert "$SOURCE_CA")
+  [[ -n "$SRC_CREDS" ]] && curl_args+=(-u "$SRC_CREDS")
+
+  local hdr last="" all=""
+  hdr=$(mktemp)
+  while :; do
+    local url="https://${registry}/v2/_catalog?n=1000"
+    [[ -n "$last" ]] && url+="&last=${last}"
+
+    local body
+    body=$(curl "${curl_args[@]}" -D "$hdr" "$url" 2>/dev/null || true)
+
+    local page
+    page=$(echo "$body" | jq -r '.repositories[]?' 2>/dev/null || true)
+    [[ -z "$page" ]] && break
+
+    all+="${page}"$'\n'
+
+    # Continue only if the server advertises a next page (RFC5988 Link header).
+    if grep -qi '^link:.*rel="next"' "$hdr"; then
+      last=$(echo "$page" | tail -n1)
+    else
+      break
+    fi
+  done
+  rm -f "$hdr"
+
+  echo "$all" | sed '/^[[:space:]]*$/d' | sort -u
+}
+
 # ── Strategy: skopeo ────────────────────────────────────────────────────────
 migrate_skopeo() {
   step "Migration via skopeo sync"
@@ -74,12 +118,8 @@ migrate_skopeo() {
 
   info "Fetching repository catalog from ${SOURCE_REGISTRY}..."
 
-  local catalog_url="https://${SOURCE_REGISTRY}/v2/_catalog"
-  local tls_flag=""
-  [[ -f "$SOURCE_CA" ]] && tls_flag="--cacert ${SOURCE_CA}"
-
   local repos
-  repos=$(curl -sk ${tls_flag} "${catalog_url}" | jq -r '.repositories[]' 2>/dev/null || true)
+  repos=$(fetch_catalog "$SOURCE_REGISTRY")
 
   if [[ -z "$repos" ]]; then
     warn "No repositories found or catalog API unavailable."
@@ -94,6 +134,9 @@ migrate_skopeo() {
     )
     [[ -f "$SOURCE_CA" ]] && cmd+=(--src-cert-dir "$(dirname "$SOURCE_CA")")
     [[ -n "$DEST_CA" ]] && [[ -f "$DEST_CA" ]] && cmd+=(--dest-cert-dir "$(dirname "$DEST_CA")")
+    [[ -n "$SRC_CREDS" ]] && cmd+=(--src-creds "$SRC_CREDS")
+    [[ -n "$DEST_CREDS" ]] && cmd+=(--dest-creds "$DEST_CREDS")
+    [[ "$INSECURE" == true ]] && cmd+=(--src-tls-verify=false --dest-tls-verify=false)
 
     cmd+=("${SOURCE_REGISTRY}" "${DEST_REGISTRY}")
 
@@ -110,32 +153,53 @@ migrate_skopeo() {
   total=$(echo "$repos" | wc -l)
   info "Found ${total} repositories to migrate"
 
-  local count=0
+  # NOTE: per-tag `skopeo copy` with an explicit destination ref is used instead
+  # of `skopeo sync`. `skopeo sync` of a single source repo only appends the
+  # repo *basename* to the destination, which does NOT preserve a nested
+  # namespace (testproj/alpine -> alpine). Copying each tag with a fully
+  # qualified dest ref guarantees the source path is reproduced exactly, so the
+  # same image address works against the destination registry after cutover.
+  local tls_flag="" auth_flag=""
+  [[ -f "$SOURCE_CA" ]] && tls_flag="--cacert ${SOURCE_CA}"
+  [[ -n "$SRC_CREDS" ]] && auth_flag="-u ${SRC_CREDS}"
+
+  local count=0 copied=0 failed=0
   while IFS= read -r repo; do
     [[ -z "$repo" ]] && continue
     count=$((count + 1))
-    info "[${count}/${total}] Syncing ${repo}..."
 
-    local cmd=(skopeo sync
-      --src docker
-      --dest docker
-      --all
-      --keep-going
-      --retry-times 3
-    )
-    [[ -f "$SOURCE_CA" ]] && cmd+=(--src-cert-dir "$(dirname "$SOURCE_CA")")
-    [[ -n "$DEST_CA" ]] && [[ -f "$DEST_CA" ]] && cmd+=(--dest-cert-dir "$(dirname "$DEST_CA")")
-
-    cmd+=("${SOURCE_REGISTRY}/${repo}" "${DEST_REGISTRY}/${repo}")
-
-    if [[ "$DRY_RUN" == true ]]; then
-      info "  [DRY RUN] ${cmd[*]}"
-    else
-      "${cmd[@]}" || warn "  Failed to sync ${repo}, continuing..."
+    local tags
+    tags=$(curl -sk ${tls_flag} ${auth_flag} \
+      "https://${SOURCE_REGISTRY}/v2/${repo}/tags/list" | jq -r '.tags[]?' 2>/dev/null || true)
+    if [[ -z "$tags" ]]; then
+      warn "[${count}/${total}] ${repo}: no tags, skipping"
+      continue
     fi
+    info "[${count}/${total}] Copying ${repo} ($(echo "$tags" | wc -w) tags)..."
+
+    while IFS= read -r tag; do
+      [[ -z "$tag" ]] && continue
+
+      local cmd=(skopeo copy --all --retry-times 3)
+      [[ -f "$SOURCE_CA" ]] && cmd+=(--src-cert-dir "$(dirname "$SOURCE_CA")")
+      [[ -n "$DEST_CA" ]] && [[ -f "$DEST_CA" ]] && cmd+=(--dest-cert-dir "$(dirname "$DEST_CA")")
+      [[ -n "$SRC_CREDS" ]] && cmd+=(--src-creds "$SRC_CREDS")
+      [[ -n "$DEST_CREDS" ]] && cmd+=(--dest-creds "$DEST_CREDS")
+      [[ "$INSECURE" == true ]] && cmd+=(--src-tls-verify=false --dest-tls-verify=false)
+      cmd+=("docker://${SOURCE_REGISTRY}/${repo}:${tag}" "docker://${DEST_REGISTRY}/${repo}:${tag}")
+
+      if [[ "$DRY_RUN" == true ]]; then
+        info "  [DRY RUN] ${cmd[*]}"
+      elif "${cmd[@]}"; then
+        copied=$((copied + 1))
+      else
+        warn "  Failed: ${repo}:${tag}"
+        failed=$((failed + 1))
+      fi
+    done <<< "$tags"
   done <<< "$repos"
 
-  info "Migration complete: ${count}/${total} repositories processed"
+  info "Migration complete: ${count}/${total} repos, ${copied} tags copied, ${failed} failed"
 }
 
 # ── Strategy: zot-sync ──────────────────────────────────────────────────────
@@ -344,12 +408,13 @@ migrate_oras() {
 
   info "Fetching repository catalog from ${SOURCE_REGISTRY}..."
 
-  local catalog_url="https://${SOURCE_REGISTRY}/v2/_catalog"
   local tls_flag=""
   [[ -f "$SOURCE_CA" ]] && tls_flag="--cacert ${SOURCE_CA}"
+  local auth_flag=""
+  [[ -n "$SRC_CREDS" ]] && auth_flag="-u ${SRC_CREDS}"
 
   local repos
-  repos=$(curl -sk ${tls_flag} "${catalog_url}" | jq -r '.repositories[]' 2>/dev/null || true)
+  repos=$(fetch_catalog "$SOURCE_REGISTRY")
 
   if [[ -z "$repos" ]]; then
     error "No repositories found. Check source registry connectivity."
@@ -366,7 +431,7 @@ migrate_oras() {
 
     local tags_url="https://${SOURCE_REGISTRY}/v2/${repo}/tags/list"
     local tags
-    tags=$(curl -sk ${tls_flag} "${tags_url}" | jq -r '.tags[]' 2>/dev/null || true)
+    tags=$(curl -sk ${tls_flag} ${auth_flag} "${tags_url}" | jq -r '.tags[]' 2>/dev/null || true)
 
     if [[ -z "$tags" ]]; then
       warn "[${count}/${total}] ${repo}: no tags found, skipping"
@@ -378,11 +443,17 @@ migrate_oras() {
       local src="${SOURCE_REGISTRY}/${repo}:${tag}"
       local dst="${DEST_REGISTRY}/${repo}:${tag}"
 
+      local oras_cmd=(oras cp -r)
+      [[ -n "$SRC_CREDS" ]] && oras_cmd+=(--from-username "${SRC_CREDS%%:*}" --from-password "${SRC_CREDS#*:}")
+      [[ -n "$DEST_CREDS" ]] && oras_cmd+=(--to-username "${DEST_CREDS%%:*}" --to-password "${DEST_CREDS#*:}")
+      [[ "$INSECURE" == true ]] && oras_cmd+=(--from-insecure --to-insecure)
+      oras_cmd+=("${src}" "${dst}")
+
       if [[ "$DRY_RUN" == true ]]; then
         info "  [DRY RUN] oras cp -r ${src} ${dst}"
       else
         info "[${count}/${total}] Copying ${src} -> ${dst}"
-        oras cp -r "${src}" "${dst}" || warn "  Failed: ${src}"
+        "${oras_cmd[@]}" || warn "  Failed: ${src}"
       fi
     done <<< "$tags"
   done <<< "$repos"
@@ -410,6 +481,9 @@ main() {
   DEST_STORAGE="${DEST_STORAGE:-}"
   SOURCE_CA="${SOURCE_CA:-/data/cert/ca.crt}"
   DEST_CA="${DEST_CA:-}"
+  SRC_CREDS="${SRC_CREDS:-}"
+  DEST_CREDS="${DEST_CREDS:-}"
+  INSECURE=false
   NAMESPACE="${NAMESPACE:-zot-registry}"
   DRY_RUN=false
   HELM_VALUES=""
@@ -424,6 +498,9 @@ main() {
       --dest-storage)   DEST_STORAGE="$2"; shift 2 ;;
       --source-ca)      SOURCE_CA="$2"; shift 2 ;;
       --dest-ca)        DEST_CA="$2"; shift 2 ;;
+      --src-creds)      SRC_CREDS="$2"; shift 2 ;;
+      --dest-creds)     DEST_CREDS="$2"; shift 2 ;;
+      --insecure)       INSECURE=true; shift ;;
       --namespace)      NAMESPACE="$2"; shift 2 ;;
       --dry-run)        DRY_RUN=true; shift ;;
       --deploy-k8s)     DEPLOY_K8S=true; shift ;;
