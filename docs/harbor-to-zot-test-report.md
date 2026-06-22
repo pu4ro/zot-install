@@ -24,7 +24,7 @@
 
 | 제약 | 대응 |
 |------|------|
-| `dnf` 사용 불가 (CD-ROM 로컬 레포만 존재) → `skopeo` 설치 불가 | `quay.io/skopeo/stable` 컨테이너를 `/usr/local/bin/skopeo` 래퍼로 호출 (`--network host --add-host cr.makina.rocks:192.168.135.95`) |
+| 인터넷 dnf 레포 없음 → `skopeo` 미설치 | **RHEL 9.3 DVD ISO**(`/root/rhel-9.3-x86_64-dvd.iso`)를 `/cdrom1`에 마운트해 `local_BaseOS/local_AppStream` 레포에서 `skopeo 1.13.3` **정식 설치** (초기 검증은 `quay.io/skopeo/stable` 컨테이너 래퍼로 진행했으나 이후 네이티브 바이너리로 교체·재검증) |
 | `docker compose` 미설치 (Harbor 전제조건) | compose v2.27 플러그인 바이너리를 `/usr/libexec/docker/cli-plugins/`에 설치 |
 | 호스트가 K8s 컨트롤플레인 → **docker 데몬 재시작 금지** | seed/마이그레이션을 모두 컨테이너 skopeo로 처리, `daemon.json` 미변경 |
 | 자체서명 인증서 | 인증서 SAN에 `DNS:cr.makina.rocks` 포함 발급, skopeo는 `--insecure` 사용 |
@@ -129,5 +129,11 @@ PULL from cr.makina.rocks (zot) OK
 
 - 운영 환경(실 인증서) 적용 시 `--insecure` 제거하고 `--source-ca`(Harbor CA)만 지정.
 - 사설 Harbor는 read 권한 robot 계정으로 `--src-creds 'robot$puller:TOKEN'` 사용 권장(계정 자체는 이전 대상 아님).
-- 본 테스트는 `skopeo`를 컨테이너 래퍼로 사용했으나, 정식 환경에서는 `skopeo` 패키지 설치 권장.
+- `skopeo`는 RHEL 9.3 DVD ISO의 AppStream에서 정식 설치(1.13.3). 네트워크 dnf 레포가 없는 폐쇄망에서는 동일 방식 권장:
+  ```bash
+  mount -o loop,ro /root/rhel-9.3-x86_64-dvd.iso /cdrom1
+  dnf -y --disablerepo=* --enablerepo=local_BaseOS,local_AppStream install skopeo
+  ```
+- 네이티브 skopeo는 호스트에서 직접 실행되므로 `/etc/hosts`의 `cr.makina.rocks` 항목으로 호스트명이 그대로 해석됨(컨테이너 래퍼/`--add-host` 불필요).
+- 네이티브 skopeo(1.13.3)로 migrate.sh end-to-end 재검증 완료: `testproj/alpine{1.0,2.0}` + `testproj/busybox:1.0` 3/3 copied, catalog/경로 일치.
 - 테스트 리소스 위치(호스트): `/root/mig-test/` (Harbor: `/root/mig-test/harbor`, zot data: `/root/mig-test/zot/data`, 인증서: `/root/mig-test/certs`)
