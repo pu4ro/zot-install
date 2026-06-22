@@ -113,12 +113,21 @@ cat > "$WORK/config.json" <<'EOF'
   "http": {
     "address": "0.0.0.0", "port": "5000",
     "compat": ["docker2s2"],
+    "readTimeout": "3600s",
+    "writeTimeout": "3600s",
     "tls": { "cert": "/certs/server.crt", "key": "/certs/server.key" }
   },
   "log": { "level": "info" }
 }
 EOF
 ```
+
+> **`readTimeout`/`writeTimeout` are essential.** zot defaults both to **60 s**.
+> A multi-GB layer (e.g. a 4–5 GB ML image) cannot be uploaded — or later
+> pulled by the cluster — within 60 s, so zot cuts the connection with an
+> `i/o timeout` (the client sees `use of closed network connection`). Raising
+> both to `3600s` fixes large pushes *and* large pulls. Validate any config with
+> `zot verify <file>` before use.
 
 ### B.3 Load the zot image (air-gap) and run the destination
 

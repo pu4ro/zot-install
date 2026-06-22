@@ -175,6 +175,9 @@ phase_deploy() {
       -CAcreateserial -out "${CERTS}/server.crt" -days 365 -sha256 -extfile "${CERTS}/v3.ext" 2>/dev/null
   fi
 
+  # readTimeout/writeTimeout default to 60s in zot, which is too short for very
+  # large layers (multi-GB ML images): the blob PATCH upload — and later the
+  # cluster's pull (GET) — gets cut at 60s with "i/o timeout". Raise both.
   cat > "$CONFIG" <<EOF
 {
   "distSpecVersion": "1.1.0",
@@ -182,6 +185,8 @@ phase_deploy() {
   "http": {
     "address": "0.0.0.0", "port": "${DEST_PORT}",
     "compat": ["docker2s2"],
+    "readTimeout": "3600s",
+    "writeTimeout": "3600s",
     "tls": { "cert": "/certs/server.crt", "key": "/certs/server.key" }
   },
   "log": { "level": "info" }

@@ -23,17 +23,49 @@ Other equivalent forms seen in the wild:
 The push that fails is almost always in the **blob `PATCH` upload** phase (the
 streaming of a layer), not in the manifest write.
 
-## Observed during the .81 migration
+## Observed during the .81 migration — root cause confirmed
 
-While migrating Harbor → zot (153 repositories, ~55 GB), the large ML image
-`cr-makina-rocks/external-hub/seldonio/mlserver:1.7.1` failed once with:
+While migrating Harbor → zot (153 repos, ~55 GB), exactly **3 images failed**,
+all very large ML images with multi-GB layers:
+`seldonio/mlserver:1.7.1` (4.3 GB layer), `catalogs/langflow:1.7.3`, and
+`runway-platform/vllm-openai:v0.18.0-tf5.1.0` (5.0 GB layer). All 196 other
+tags copied fine.
+
+The client error was `use of closed network connection`, but the **destination
+zot logs gave the real cause**:
 
 ```
-writing blob: Patch ".../blobs/uploads/<uuid>": use of closed network connection
+level=error msg="unexpected error, removing .uploads/ files"
+            error="read tcp <zot>:5000-><client>: i/o timeout"  (routes.go PatchBlobUpload)
+PATCH /v2/.../blobs/uploads/<uuid>  statusCode=500  latency=1m0s  Content-Length=5017156773
 ```
 
-The surrounding small images copied fine; only the large-layer image tripped
-the drop — consistent with a size/time-based limit rather than a hard outage.
+**Root cause: zot's `http.readTimeout` (and `writeTimeout`) default to 60 s.**
+A 4–5 GB layer streamed from Harbor cannot finish its single PATCH within 60 s,
+so zot closes the connection at exactly `1m0s`. This was **not** a kernel,
+nerdctl-port-forwarder, or Harbor problem — verified by reproducing it with zot
+on host networking (forwarder removed) and by the `latency=1m0s` in zot's own log.
+
+### Fix (confirmed)
+
+Set generous timeouts in the zot config and restart zot — this fixes large
+**pushes** and, just as importantly, large **pulls** by the cluster:
+
+```json
+"http": {
+  "readTimeout": "3600s",
+  "writeTimeout": "3600s",
+  ...
+}
+```
+
+Validate with `zot verify <config>`. After this, the three large images copy
+cleanly. The `harbor-to-zot-replace.sh` deploy phase writes these timeouts by
+default.
+
+> The proxy and kernel guidance below still applies to Harbor-side drops and to
+> environments where a reverse proxy or transport limit (not zot) is the cause —
+> but for the `.81` case the single decisive fix was the zot read/write timeout.
 
 ## Why it happens
 
