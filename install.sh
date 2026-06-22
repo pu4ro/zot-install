@@ -27,6 +27,7 @@ Options:
   --ip IP               Server IP for TLS SAN         (auto-detected if omitted)
   --port PORT           Host port to expose            (default: 443)
   --data-dir DIR        Base data directory            (default: /data)
+  --runtime NAME        Container runtime to use       (docker|nerdctl|podman; auto-detected if omitted)
   --image IMAGE         Zot container image            (default: ghcr.io/project-zot/zot:latest)
   --image-tar PATH      Load zot image from local tar  (for air-gapped)
   --airgap              Air-gapped mode (skip online checks, require --image-tar)
@@ -38,7 +39,7 @@ Options:
   -h, --help            Show this help
 
 Environment variables:
-  ZOT_DOMAIN, ZOT_IP, ZOT_PORT, DATA_DIR, ZOT_IMAGE, ZOT_IMAGE_TAR, AIRGAP
+  ZOT_DOMAIN, ZOT_IP, ZOT_PORT, DATA_DIR, ZOT_IMAGE, ZOT_IMAGE_TAR, AIRGAP, CONTAINER_RUNTIME
 
 Examples:
   # Basic install with defaults
@@ -79,12 +80,44 @@ detect_os() {
 }
 
 # ── Detect container runtime ───────────────────────────────────────────────
+# A runtime is only usable if its binary is present AND its backend is
+# reachable. docker and nerdctl both talk to a daemon (dockerd / containerd),
+# so we probe `info`; podman is daemonless and only needs the binary.
+runtime_works() {
+  local rt="$1"
+  command -v "$rt" >/dev/null 2>&1 || return 1
+  case "$rt" in
+    podman) return 0 ;;
+    *)      "$rt" info >/dev/null 2>&1 ;;
+  esac
+}
+
 detect_runtime() {
-  if command -v nerdctl >/dev/null 2>&1; then
+  # Explicit selection wins: --runtime flag or CONTAINER_RUNTIME env var.
+  # Lets a host with both docker and nerdctl installed pick either one.
+  local requested="${CONTAINER_RUNTIME:-}"
+  if [[ -n "$requested" ]]; then
+    case "$requested" in
+      docker|nerdctl|podman) ;;
+      *) error "Unsupported runtime '${requested}'. Choose one of: docker, nerdctl, podman" ;;
+    esac
+    command -v "$requested" >/dev/null 2>&1 \
+      || error "Requested runtime '${requested}' not found in PATH"
+    runtime_works "$requested" \
+      || error "Requested runtime '${requested}' is installed but not functional (is its daemon running?)"
+    RUNTIME="$requested"
+    info "Using container runtime: ${RUNTIME} (explicitly selected)"
+    return
+  fi
+
+  # Auto-detect: prefer nerdctl, then docker, then podman — but only pick a
+  # runtime whose backend actually responds, so a broken nerdctl/containerd
+  # install transparently falls back to a working docker (and vice versa).
+  if runtime_works nerdctl; then
     RUNTIME="nerdctl"
-  elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+  elif runtime_works docker; then
     RUNTIME="docker"
-  elif command -v podman >/dev/null 2>&1; then
+  elif runtime_works podman; then
     RUNTIME="podman"
   else
     RUNTIME=""
@@ -335,6 +368,7 @@ main() {
   ZOT_STORAGE="${ZOT_STORAGE:-${DATA_DIR}/zot}"
   ZOT_IMAGE="${ZOT_IMAGE:-ghcr.io/project-zot/zot:latest}"
   ZOT_IMAGE_TAR="${ZOT_IMAGE_TAR:-}"
+  CONTAINER_RUNTIME="${CONTAINER_RUNTIME:-}"
   SKIP_HOSTS="${SKIP_HOSTS:-false}"
   SKIP_CERTS="${SKIP_CERTS:-false}"
   CERTS_ONLY="${CERTS_ONLY:-false}"
@@ -349,6 +383,7 @@ main() {
       --ip)         ZOT_IP="$2"; shift 2 ;;
       --port)       ZOT_PORT="$2"; shift 2 ;;
       --data-dir)   DATA_DIR="$2"; CERT_DIR="${DATA_DIR}/cert"; ZOT_STORAGE="${DATA_DIR}/zot"; shift 2 ;;
+      --runtime)    CONTAINER_RUNTIME="$2"; shift 2 ;;
       --image)      ZOT_IMAGE="$2"; shift 2 ;;
       --image-tar)  ZOT_IMAGE_TAR="$2"; shift 2 ;;
       --airgap)     AIRGAP=true; shift ;;
