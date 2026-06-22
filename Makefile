@@ -125,8 +125,8 @@ airgap-install: ## Install in air-gapped mode using local image tar
 	@sudo ./install.sh --airgap --image-tar ./zot-image.tar
 
 # ── Testing ─────────────────────────────────────────────────────────────────
-test: ## Run BATS unit tests
-	@bats tests/
+test: ## Run host migration integration test
+	@tests/integration/test_host_migration.sh
 
 # ── Utilities ───────────────────────────────────────────────────────────────
 check: ## Validate environment and prerequisites

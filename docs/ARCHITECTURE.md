@@ -351,7 +351,7 @@ This pattern enables:
 - Helper functions (e.g., `detect_os()`, `check_tool()`) can be called directly
 - Shellcheck and linting tools work correctly with this pattern
 
-See the test suite for examples in `tests/install/`, `tests/migrate/`, and `tests/client_setup/`.
+See the integration test suite for examples in `tests/integration/`.
 
 ## Error Handling
 
@@ -398,15 +398,8 @@ zot-install/
 │   ├── ARCHITECTURE.md   # This file
 │   ├── TESTING.md        # Test suite documentation
 │   └── TROUBLESHOOTING.md # Common issues & solutions
-└── tests/                # BATS test suite
-    ├── ci/
-    │   └── matrix.yml    # GitHub Actions CI config
-    ├── install/          # install.sh tests (6 files)
-    ├── migrate/          # migrate.sh tests (7 files)
-    ├── client_setup/     # client-setup.sh tests (2 files)
-    ├── makefile/         # Makefile target tests (1 file)
-    ├── integration/      # Integration test suite
-    └── test_helper/      # Shared test utilities
+└── tests/                # Test suite
+    └── integration/      # Integration test suite (live host migration)
 ```
 
 ## Key Dependencies

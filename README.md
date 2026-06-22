@@ -246,15 +246,8 @@ zot-install/
 │   ├── ARCHITECTURE.md   # System architecture & flow diagrams
 │   ├── TESTING.md        # Test suite documentation
 │   └── TROUBLESHOOTING.md # Common issues & solutions
-└── tests/                # BATS test suite
-    ├── ci/
-    │   └── matrix.yml    # GitHub Actions CI config
-    ├── install/          # install.sh tests
-    ├── migrate/          # migrate.sh tests
-    ├── client_setup/     # client-setup.sh tests
-    ├── makefile/         # Makefile target tests
-    ├── integration/      # Integration test suite
-    └── test_helper/      # Shared test utilities
+└── tests/                # Test suite
+    └── integration/      # Integration test suite (live host migration)
 ```
 
 ## License

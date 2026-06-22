@@ -247,15 +247,8 @@ zot-install/
 │   ├── ARCHITECTURE.md   # 시스템 아키텍처
 │   ├── TESTING.md        # 테스트 가이드
 │   └── TROUBLESHOOTING.md # 문제 해결 가이드
-└── tests/                # BATS 테스트 스위트
-    ├── ci/
-    │   └── matrix.yml    # GitHub Actions CI 설정
-    ├── install/          # install.sh 테스트
-    ├── migrate/          # migrate.sh 테스트
-    ├── client_setup/     # client-setup.sh 테스트
-    ├── makefile/         # Makefile 타겟 테스트
-    ├── integration/      # 통합 테스트
-    └── test_helper/      # 공유 테스트 유틸리티
+└── tests/                # 테스트 스위트
+    └── integration/      # 통합 테스트 (실 호스트 마이그레이션)
 ```
 
 ## 참고
