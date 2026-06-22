@@ -351,7 +351,7 @@ This pattern enables:
 - Helper functions (e.g., `detect_os()`, `check_tool()`) can be called directly
 - Shellcheck and linting tools work correctly with this pattern
 
-See the integration test suite for examples in `tests/integration/`.
+See the recorded test reports under `docs/` for real-host validation examples.
 
 ## Error Handling
 
@@ -394,13 +394,14 @@ zot-install/
 ├── install.sh            # Main installer script
 ├── migrate.sh            # Registry migration script
 ├── client-setup.sh       # Client node trust setup
-├── docs/                 # Extended documentation
-│   ├── ARCHITECTURE.md   # This file
-│   ├── TESTING.md        # Test suite documentation
-│   └── TROUBLESHOOTING.md # Common issues & solutions
-└── tests/                # Test suite
-    └── integration/      # Integration test suite (live host migration)
+└── docs/                 # Extended documentation
+    ├── ARCHITECTURE.md   # This file
+    ├── TESTING.md        # Validation approach & recorded reports
+    └── TROUBLESHOOTING.md # Common issues & solutions
 ```
+
+Validation is performed on real (often air-gapped) hosts and recorded as
+Markdown reports under `docs/` — there is no in-repo test suite.
 
 ## Key Dependencies
 

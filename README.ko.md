@@ -243,12 +243,10 @@ zot-install/
 ├── install.sh            # 메인 설치 스크립트
 ├── migrate.sh            # 레지스트리 마이그레이션 스크립트
 ├── client-setup.sh       # 클라이언트 노드 설정 스크립트
-├── docs/                 # 상세 문서
-│   ├── ARCHITECTURE.md   # 시스템 아키텍처
-│   ├── TESTING.md        # 테스트 가이드
-│   └── TROUBLESHOOTING.md # 문제 해결 가이드
-└── tests/                # 테스트 스위트
-    └── integration/      # 통합 테스트 (실 호스트 마이그레이션)
+└── docs/                 # 상세 문서
+    ├── ARCHITECTURE.md   # 시스템 아키텍처
+    ├── TESTING.md        # 검증 방식 및 테스트 리포트
+    └── TROUBLESHOOTING.md # 문제 해결 가이드
 ```
 
 ## 참고

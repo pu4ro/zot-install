@@ -2,7 +2,6 @@
 
 `migrate.sh`가 **호스트에서 호스트로** 레지스트리 데이터를 옮기는 동작을 end-to-end로 검증하는 방법을 설명합니다. 원래 목적은 **host Harbor → host zot** 전환 검증이며, 본 가이드는 그 절차를 재현 가능한 자동 테스트로 정리한 것입니다.
 
-> 한 번에 실행: [`tests/integration/test_host_migration.sh`](../tests/integration/test_host_migration.sh)
 > 실 Harbor로 수행한 1회성 검증 기록은 [`harbor-to-zot-test-report.md`](./harbor-to-zot-test-report.md) 참고.
 
 ---
@@ -37,21 +36,9 @@ docker info >/dev/null && echo "docker daemon UP"
 
 ---
 
-## 3. 자동 실행 (권장)
+## 3. 실행 방식
 
-```bash
-# 저장소 루트에서
-tests/integration/test_host_migration.sh
-```
-
-포트/이미지/작업 디렉터리는 환경변수로 덮어쓸 수 있습니다:
-
-```bash
-SRC_PORT=5002 DST_PORT=5003 WORK=/tmp/zot-mig-test \
-  tests/integration/test_host_migration.sh
-```
-
-스크립트는 종료 시(성공/실패 무관) `mig-src`/`mig-dst` 컨테이너를 자동 정리합니다. 모든 검증을 통과하면 `ALL CHECKS PASSED`를, 하나라도 실패하면 비정상 종료코드를 반환합니다.
+이전에는 저장소에 자동화 스크립트(`tests/integration/test_host_migration.sh`)가 포함되어 있었으나, 현재는 **실 호스트에서 수동 절차로 검증**합니다. 아래 §4의 단계를 순서대로 수행하고, 결과는 `docs/*-test-report.md`로 기록합니다.
 
 ---
 

@@ -1,50 +1,32 @@
 # Testing Guide
 
-Testing focuses on **integration tests** that exercise the scripts end-to-end
-against live registries on a real host. (The mocked BATS unit-test suite has
-been removed.)
+This project no longer ships an in-repo automated test suite. Migration and
+installation are validated directly on **real (often air-gapped) hosts**, and
+each validation run is recorded as a Markdown report under `docs/`.
 
-## Prerequisites
+## Why real-host validation
 
-The integration tests run the real tools, so the host needs:
+The scripts orchestrate `docker`/`containerd`, `skopeo`, TLS trust, and
+`/etc/hosts` against live registries. The behaviours that matter most —
+same-address cutover, repository-path preservation, air-gapped image loading,
+and pre-existing `containerd` `certs.d` trust — can only be proven against a
+real host with real images, so that is where testing happens.
 
-- `docker` (or another supported runtime)
-- `skopeo`, `jq`, `curl`, `openssl`, `rsync`
-- Image pull access (or pre-loaded images for air-gapped hosts)
+## Running a validation
 
-## Running Tests
+1. Stand up (or reuse) the source registry and images on the target host.
+2. Install zot with `install.sh` (use `--airgap --image-tar` on air-gapped
+   hosts).
+3. Run `migrate.sh` with the appropriate strategy and credentials.
+4. Compare catalogs and manifest digests between source and destination.
+5. Perform the same-address cutover and confirm clients pull unchanged.
+6. Record the steps, commands, and results in a new `docs/*-test-report.md`.
 
-```bash
-# Host migration integration test (default target)
-make test
+## Recorded reports
 
-# Run it directly
-tests/integration/test_host_migration.sh
+- [harbor-to-zot-test-report.md](harbor-to-zot-test-report.md) — Harbor → zot
+  migration validated on a real host (`192.168.135.95`).
+- [migration-guide.md](migration-guide.md) / [migration-test-guide.md](migration-test-guide.md)
+  — reproducible method, expected output, and troubleshooting.
 
-# Override ports / workdir
-SRC_PORT=5002 DST_PORT=5003 tests/integration/test_host_migration.sh
-```
-
-### Host migration integration test
-
-`tests/integration/test_host_migration.sh` validates `migrate.sh` end-to-end
-against two live zot registries on the host (host registry → host zot, the
-same-registry assumption stand-in for host Harbor → host zot). It needs
-`docker` + `skopeo`/`jq`/`curl`/`openssl`/`rsync` and image pull access.
-
-See [migration-test-guide.md](migration-test-guide.md) for the full method,
-expected output, and troubleshooting, and
-[harbor-to-zot-test-report.md](harbor-to-zot-test-report.md) for a recorded
-real-Harbor validation run.
-
-## Test Structure
-
-```
-tests/
-└── integration/                # Integration test suite
-    ├── Dockerfile.test          # Docker-in-Docker test container
-    ├── run_integration.sh       # Integration test runner
-    ├── test_full_install.sh     # Full installation test
-    ├── test_filesystem_migration.sh # Filesystem migration test
-    └── test_host_migration.sh   # Host registry -> host zot migration (skopeo + filesystem)
-```
+Additional reports are added here as new environments are validated.

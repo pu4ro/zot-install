@@ -242,12 +242,10 @@ zot-install/
 ├── install.sh            # Main installer script
 ├── migrate.sh            # Registry migration script
 ├── client-setup.sh       # Client node trust setup
-├── docs/                 # Extended documentation
-│   ├── ARCHITECTURE.md   # System architecture & flow diagrams
-│   ├── TESTING.md        # Test suite documentation
-│   └── TROUBLESHOOTING.md # Common issues & solutions
-└── tests/                # Test suite
-    └── integration/      # Integration test suite (live host migration)
+└── docs/                 # Extended documentation
+    ├── ARCHITECTURE.md   # System architecture & flow diagrams
+    ├── TESTING.md        # Validation approach & recorded reports
+    └── TROUBLESHOOTING.md # Common issues & solutions
 ```
 
 ## License

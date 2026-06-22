@@ -125,8 +125,9 @@ airgap-install: ## Install in air-gapped mode using local image tar
 	@sudo ./install.sh --airgap --image-tar ./zot-image.tar
 
 # ── Testing ─────────────────────────────────────────────────────────────────
-test: ## Run host migration integration test
-	@tests/integration/test_host_migration.sh
+test: ## Validation is performed on real air-gapped hosts; see docs/ test reports
+	@echo "No in-repo test suite. Migration is validated on real air-gapped hosts."
+	@echo "See docs/ for recorded test reports (e.g. harbor-to-zot-test-report.md)."
 
 # ── Utilities ───────────────────────────────────────────────────────────────
 check: ## Validate environment and prerequisites
