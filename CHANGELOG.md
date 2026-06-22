@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-06-22
+
 ### Added
 
 - Cross-OS Zot registry installation (Ubuntu/Debian, RHEL/CentOS/Rocky, SLES, macOS)
