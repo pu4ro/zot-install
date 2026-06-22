@@ -192,44 +192,6 @@ MOCK_EOF
   fi
 }
 
-# ── Kubernetes (helm + kubectl) ────────────────────────────────────────────
-
-setup_k8s_mocks() {
-  local mock_dir="${TEST_TMP}/mocks"
-  mkdir -p "$mock_dir" "${TEST_TMP}/logs"
-
-  cat > "${mock_dir}/helm" <<'MOCK_EOF'
-#!/usr/bin/env bash
-echo "helm $*" >> "${TEST_TMP}/logs/helm.log" 2>/dev/null || true
-case "$1" in
-  install|upgrade) echo "NAME: zot"; echo "STATUS: deployed" ;;
-  repo) echo "\"zot\" has been added" ;;
-  pull) echo "Pulled: chart.tgz" ;;
-  push) echo "Pushed: chart.tgz" ;;
-  version) echo "v3.14.0" ;;
-esac
-exit 0
-MOCK_EOF
-  chmod +x "${mock_dir}/helm"
-
-  cat > "${mock_dir}/kubectl" <<'MOCK_EOF'
-#!/usr/bin/env bash
-echo "kubectl $*" >> "${TEST_TMP}/logs/kubectl.log" 2>/dev/null || true
-case "$1" in
-  get) echo "NAME    READY   STATUS    RESTARTS   AGE"; echo "zot-0   1/1     Running   0          5m" ;;
-  apply) echo "configured" ;;
-  create) echo "created" ;;
-  delete) echo "deleted" ;;
-esac
-exit 0
-MOCK_EOF
-  chmod +x "${mock_dir}/kubectl"
-
-  if [[ ":$PATH:" != *":${mock_dir}:"* ]]; then
-    export PATH="${mock_dir}:${PATH}"
-  fi
-}
-
 # ── systemctl ──────────────────────────────────────────────────────────────
 
 setup_systemctl_mocks() {
@@ -349,6 +311,5 @@ setup_migrate_mocks() {
   setup_skopeo_mocks
   setup_oras_mocks
   setup_rsync_mocks
-  setup_k8s_mocks
   setup_jq_mocks
 }

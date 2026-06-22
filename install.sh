@@ -584,7 +584,7 @@ fi)
     # Pull a Helm chart
     helm pull oci://${ZOT_DOMAIN}/<repo>/<chart> --version <ver>
 
-  Migration to K8s:
+  Migration:
     ./migrate.sh --help
 
 EOF

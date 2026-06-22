@@ -30,6 +30,23 @@ bats tests/install/
 bats tests/install/test_tls_generation.bats
 ```
 
+### Host migration integration test
+
+`tests/integration/test_host_migration.sh` validates `migrate.sh` end-to-end
+against two live zot registries on the host (host registry → host zot, the
+same-registry assumption stand-in for host Harbor → host zot). It needs
+`docker` + `skopeo`/`jq`/`curl`/`openssl`/`rsync` and image pull access — it is
+not part of the mocked BATS unit suite.
+
+```bash
+tests/integration/test_host_migration.sh
+# or override ports/workdir:
+SRC_PORT=5002 DST_PORT=5003 tests/integration/test_host_migration.sh
+```
+
+See [migration-test-guide.md](migration-test-guide.md) for the full method,
+expected output, and troubleshooting.
+
 ## Test Structure
 
 ```
@@ -41,14 +58,13 @@ tests/
 │   ├── test_hosts_file.bats   # /etc/hosts management
 │   ├── test_os_detection.bats # OS and runtime detection
 │   └── test_tls_generation.bats # TLS certificate generation
-├── migrate/                    # migrate.sh tests (7 files)
+├── migrate/                    # migrate.sh tests (6 files)
 │   ├── test_arg_parsing.bats  # CLI argument parsing
 │   ├── test_dry_run.bats      # Dry run mode
 │   ├── test_filesystem.bats   # Filesystem strategy
 │   ├── test_oras.bats         # ORAS strategy
 │   ├── test_skopeo.bats       # Skopeo strategy
-│   ├── test_strategy_validation.bats # Strategy validation
-│   └── test_zot_sync.bats    # Zot sync strategy
+│   └── test_strategy_validation.bats # Strategy validation
 ├── client_setup/               # client-setup.sh tests (2 files)
 │   ├── test_arg_parsing.bats  # CLI argument parsing
 │   └── test_trust_setup.bats  # Trust configuration
@@ -58,7 +74,8 @@ tests/
 │   ├── Dockerfile.test        # Docker-in-Docker test container
 │   ├── run_integration.sh     # Integration test runner
 │   ├── test_full_install.sh   # Full installation test
-│   └── test_filesystem_migration.sh # Filesystem migration test
+│   ├── test_filesystem_migration.sh # Filesystem migration test
+│   └── test_host_migration.sh # Host registry -> host zot migration (skopeo + filesystem)
 └── test_helper/                # Shared test utilities
     ├── common.bash            # Common setup/teardown, source helpers
     └── mocks.bash             # Mock functions for external commands
@@ -77,7 +94,7 @@ tests/
 
 **`test_helper/mocks.bash`** provides pre-built mock setups:
 - `setup_install_mocks()` -- mocks for openssl, curl, container runtimes
-- `setup_migrate_mocks()` -- mocks for skopeo, oras, rsync, helm, kubectl
+- `setup_migrate_mocks()` -- mocks for skopeo, oras, rsync
 - `setup_runtime_mocks <runtime>` -- mock a specific container runtime
 - `setup_ip_mocks <ip>` -- mock IP detection commands
 - And many more specialized mock functions

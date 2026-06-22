@@ -7,7 +7,7 @@ This document describes the high-level architecture and component relationships 
 | Component | File | Purpose |
 |-----------|------|---------|
 | Installer | `install.sh` | Detects OS/runtime, generates TLS certs, deploys Zot container |
-| Migrator | `migrate.sh` | Migrates registry data to K8s-based registry (4 strategies) |
+| Migrator | `migrate.sh` | Migrates registry data to a destination registry (3 strategies) |
 | Client Setup | `client-setup.sh` | Configures client nodes to trust the registry |
 | Makefile | `Makefile` | User-facing command interface for all operations |
 | Configuration | `.env` / `.env.example` | Environment variable configuration |
@@ -38,7 +38,6 @@ Each script loads `.env` if present using bash's `set -a` / `set +a` pattern to 
 - `STRATEGY`: `skopeo`
 - `SOURCE_STORAGE`: `/data/zot`
 - `SOURCE_CA`: `/data/cert/ca.crt`
-- `NAMESPACE`: `zot-registry`
 
 **client-setup.sh defaults:**
 - `ZOT_DOMAIN`: `cr.makina.rocks`
@@ -109,7 +108,6 @@ The installer generates a JSON configuration file at `${ZOT_STORAGE}/config.json
 - Storage backend: OCI directory layout
 - HTTPS with TLS certificates
 - Catalog API enabled
-- Optional sync extension (for migration)
 
 ### Container Startup
 
@@ -147,7 +145,7 @@ Creates `/etc/docker/certs.d/<domain>:<port>/ca.crt` with the CA certificate.
 
 ## Migration Flow
 
-Migration supports four strategies for moving data from the temporary Zot registry to a permanent destination (typically Kubernetes-based):
+Migration supports three strategies for moving data from this Zot registry to a permanent destination:
 
 ```
 make migrate
@@ -160,7 +158,6 @@ migrate.sh --strategy <STRATEGY> --dest <REGISTRY>
     ├─ 3. Select strategy:
     │
     ├── skopeo ──────── skopeo sync --src docker (all repos from catalog)
-    ├── zot-sync ────── Generate sync config → Deploy Zot on K8s via Helm
     ├── filesystem ──── rsync OCI storage directory to destination
     └── oras ────────── oras copy per-repo (preserves referrers/signatures)
     
@@ -187,36 +184,6 @@ Uses OCI Image spec-compliant tool to bulk copy all images and artifacts.
 
 **Best for:** Large registries with many repositories, simple image-only migration.
 
-### Strategy: zot-sync
-
-Uses Zot's built-in sync extension to deploy a new Zot instance on Kubernetes that automatically syncs from the temporary registry.
-
-**Requirements:**
-- `helm` (if `--deploy-k8s` is used)
-- `kubectl` (if `--deploy-k8s` is used)
-
-**Process:**
-1. Generates Zot configuration with sync extension:
-   - Source registry connection settings
-   - Source CA certificate
-   - Sync schedule and behavior
-2. Generates Helm values file for K8s deployment with:
-   - Image repository and tag
-   - Ingress configuration
-   - Storage (PV) configuration
-   - Config file embedding
-3. If `--deploy-k8s`:
-   - Creates namespace
-   - Creates secret with source CA
-   - Adds Zot Helm repository
-   - Deploys via `helm upgrade --install`
-
-**Generated files:**
-- `/tmp/zot-k8s-config/config.json` - Zot config with sync
-- `/tmp/zot-k8s-config/helm-values.yaml` - Helm deployment values
-
-**Best for:** Full K8s migration with automatic continuous sync capability.
-
 ### Strategy: filesystem
 
 Direct copy of OCI storage directory to destination using `rsync`.
@@ -240,7 +207,7 @@ Direct copy of OCI storage directory to destination using `rsync`.
 - `-H` - Hard links
 - `--progress` - Progress indicator
 
-**Best for:** Migrating to a Kubernetes Persistent Volume on the same host or network share.
+**Best for:** Migrating to a persistent volume or storage path on the same host or network share.
 
 ### Strategy: oras
 
@@ -425,7 +392,7 @@ zot-install/
 ├── README.md             # English documentation
 ├── README.ko.md          # Korean documentation
 ├── install.sh            # Main installer script
-├── migrate.sh            # K8s migration script
+├── migrate.sh            # Registry migration script
 ├── client-setup.sh       # Client node trust setup
 ├── docs/                 # Extended documentation
 │   ├── ARCHITECTURE.md   # This file
@@ -455,7 +422,6 @@ zot-install/
 
 By strategy:
 - **skopeo** - For image copying
-- **helm** & **kubectl** - For K8s deployment
 - **rsync** - For filesystem-based migration
 - **oras** - For artifact-aware migration
 - **jq** - For JSON parsing (catalog queries)

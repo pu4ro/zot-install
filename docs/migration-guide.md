@@ -63,7 +63,6 @@ Usage: migrate.sh [OPTIONS]
 
 전략:
   --strategy skopeo       태그 단위 skopeo copy (기본, 권장 — 경로 정확 보존)
-  --strategy zot-sync     K8s zot의 내장 sync 확장 config 생성
   --strategy filesystem   OCI 저장소 직접 rsync (zot→zot 전용)
   --strategy oras         oras 복사 (referrers/서명 보존)
 

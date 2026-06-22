@@ -2,7 +2,7 @@
 
 > 한국어 문서: [README.ko.md](README.ko.md)
 
-Automated OCI registry (Zot) deployment tool for Runway 2.0. Use as a temporary registry before K8s installation, then migrate to a permanent registry after K8s is set up.
+Automated OCI registry (Zot) deployment tool for Runway 2.0. Use as a standalone registry, with optional migration to another permanent registry.
 
 ## Features
 
@@ -13,7 +13,7 @@ Automated OCI registry (Zot) deployment tool for Runway 2.0. Use as a temporary 
 - Cross-runtime: docker, nerdctl (containerd), podman
 - systemd-managed service (`zot.service`): auto-restart and survives reboot
 - Air-gapped environment support
-- K8s migration (4 strategies)
+- Registry migration (3 strategies)
 
 ## Quick Start
 
@@ -45,9 +45,8 @@ make status
 | `make enable` | Enable the service to start on boot (systemd) |
 | `make disable` | Disable the service from starting on boot (systemd) |
 | `make client` | Configure TLS trust on client nodes |
-| `make migrate` | Migrate to K8s registry |
+| `make migrate` | Migrate to a destination registry |
 | `make migrate-dry-run` | Preview migration (dry run) |
-| `make deploy-k8s` | Deploy Zot via Helm on K8s with auto-sync |
 | `make save-image` | Save Zot image to a tar archive |
 | `make airgap-bundle` | Create a full air-gapped bundle |
 | `make airgap-install` | Install in air-gapped mode |
@@ -180,9 +179,9 @@ helm pull oci://cr.makina.rocks/charts/mychart --version 1.0.0
 
 Open `https://<ZOT_IP>` in your browser.
 
-## K8s Migration
+## Registry Migration
 
-After the K8s cluster is up, migrate from the temporary registry to a permanent one:
+Migrate from this registry to another permanent registry:
 
 ### Strategy 1: skopeo sync (recommended)
 
@@ -200,30 +199,15 @@ make migrate-dry-run
 make migrate
 ```
 
-### Strategy 2: zot-sync (zero-downtime)
-
-Deploys a new Zot instance on K8s and replicates automatically using the built-in sync extension.
-
-```bash
-DEST_REGISTRY=zot-k8s.example.com
-STRATEGY=zot-sync
-
-# Auto-deploy to K8s and configure sync
-make deploy-k8s
-
-# After sync completes, switch DNS -> remove the temporary registry
-make uninstall
-```
-
-### Strategy 3: filesystem (fastest)
+### Strategy 2: filesystem (fastest)
 
 Directly rsyncs the OCI storage directory. Zot-to-Zot only.
 
 ```bash
-./migrate.sh --strategy filesystem --dest-storage /mnt/k8s-pv/zot
+./migrate.sh --strategy filesystem --dest-storage /mnt/data/zot
 ```
 
-### Strategy 4: oras (preserves signatures/SBOM)
+### Strategy 3: oras (preserves signatures/SBOM)
 
 Preserves the full referrer chain, including Cosign signatures and SBOMs.
 
@@ -236,12 +220,11 @@ make migrate
 
 ### Strategy Comparison
 
-| Strategy | Speed | Zero-downtime | Referrer Preservation | External Tools |
-|---|---|---|---|---|
-| skopeo | Fast | No | No | skopeo |
-| zot-sync | Medium | Yes | Yes | None (built-in) |
-| filesystem | Fastest | No | Yes | rsync |
-| oras | Medium | No | Yes | oras |
+| Strategy | Speed | Referrer Preservation | External Tools |
+|---|---|---|---|
+| skopeo | Fast | No | skopeo |
+| filesystem | Fastest | Yes | rsync |
+| oras | Medium | Yes | oras |
 
 ## Directory Structure
 
@@ -257,7 +240,7 @@ zot-install/
 ├── README.md             # This document (English)
 ├── README.ko.md          # Korean documentation
 ├── install.sh            # Main installer script
-├── migrate.sh            # K8s migration script
+├── migrate.sh            # Registry migration script
 ├── client-setup.sh       # Client node trust setup
 ├── docs/                 # Extended documentation
 │   ├── ARCHITECTURE.md   # System architecture & flow diagrams
@@ -285,4 +268,5 @@ This project is licensed under the Apache License 2.0 -- see the [LICENSE](LICEN
 - [OCI Distribution Spec](https://github.com/opencontainers/distribution-spec)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Testing Guide](docs/TESTING.md)
+- [Migration Test Guide (host registry → host zot)](docs/migration-test-guide.md)
 - [Troubleshooting](docs/TROUBLESHOOTING.md)

@@ -14,10 +14,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 - Automatic TLS certificate generation with SAN
 - OCI Helm chart push/pull support
 - Air-gapped deployment with offline image loading
-- K8s migration with 4 strategies: skopeo sync, zot-sync, filesystem (rsync), oras
+- Registry migration with 3 strategies: skopeo sync, filesystem (rsync), oras
 - Client node trust setup script (system CA, containerd certs.d, Docker certs)
 - Makefile command interface for all operations
 - Environment variable configuration via .env file
-- BATS unit test suite (93 tests across 16 test files)
+- BATS unit test suite (88 tests across 15 test files)
+- Host registry -> host zot migration integration test (`tests/integration/test_host_migration.sh`)
 - GitHub Actions CI pipeline (unit tests, integration tests, multi-OS matrix)
 - Integration test suite with Docker-in-Docker

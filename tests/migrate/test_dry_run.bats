@@ -13,9 +13,6 @@ setup() {
   SOURCE_CA="${TEST_TMP}/ca.crt"
   DEST_CA=""
   DRY_RUN=true
-  DEPLOY_K8S=false
-  NAMESPACE="zot-registry"
-  HELM_VALUES=""
 
   touch "$SOURCE_CA"
 
@@ -104,17 +101,6 @@ JQ_EOF
   [ "$status" -eq 0 ]
   [[ "$output" == *"[DRY RUN]"* ]]
   [[ "$output" == *"oras cp"* ]]
-}
-
-# ── zot-sync dry-run ─────────────────────────────────────────────────────
-
-@test "dry-run: zot-sync with --deploy-k8s produces [DRY RUN] markers" {
-  setup_k8s_mocks
-  DEPLOY_K8S=true
-
-  run migrate_zot_sync
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"[DRY RUN]"* ]]
 }
 
 # ── Full main() dry-run with default strategy ────────────────────────────

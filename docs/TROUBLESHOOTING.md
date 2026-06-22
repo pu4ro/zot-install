@@ -68,7 +68,6 @@ Common issues and solutions when using the Zot Registry Installer. Error entries
 **Cause:** A required external tool for the chosen migration strategy is not installed.  
 **Solution:**
 - skopeo strategy: install `skopeo` and `jq`
-- zot-sync strategy: install `helm` and `kubectl`
 - filesystem strategy: install `rsync`
 - oras strategy: install `oras` and `jq`
 
@@ -77,8 +76,8 @@ Common issues and solutions when using the Zot Registry Installer. Error entries
 **Script:** `migrate.sh` (lines ~73, ~311, ~343)  
 **Cause:** Migration destination was not specified. Each strategy requires either `--dest` (registry URL) or `--dest-storage` (local path).  
 **Solution:**
-- For skopeo/zot-sync/oras: `./migrate.sh --strategy <name> --dest harbor.example.com`
-- For filesystem: `./migrate.sh --strategy filesystem --dest-storage /mnt/k8s-pv/zot`
+- For skopeo/oras: `./migrate.sh --strategy <name> --dest harbor.example.com`
+- For filesystem: `./migrate.sh --strategy filesystem --dest-storage /mnt/data/zot`
 - Or set `DEST_REGISTRY` / `DEST_STORAGE` in `.env`
 
 ### "Source storage not found"

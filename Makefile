@@ -1,7 +1,7 @@
 .PHONY: help install uninstall status logs restart enable disable \
        certs client migrate migrate-dry-run \
        save-image load-image airgap-bundle airgap-install \
-       deploy-k8s clean check test
+       clean check test
 
 SHELL := /bin/bash
 MAKEFLAGS += --no-print-directory
@@ -91,9 +91,6 @@ migrate: ## Migrate registry to destination (requires DEST_REGISTRY or DEST_STOR
 
 migrate-dry-run: ## Preview migration without executing
 	@sudo ./migrate.sh --strategy $(STRATEGY) --dest $(DEST_REGISTRY) --dry-run
-
-deploy-k8s: ## Deploy zot on K8s with sync from temp registry
-	@sudo ./migrate.sh --strategy zot-sync --dest $(DEST_REGISTRY) --deploy-k8s
 
 # ── Air-Gapped ──────────────────────────────────────────────────────────────
 save-image: ## Save zot container image to tar file

@@ -1,5 +1,7 @@
 # Harbor → zot 마이그레이션 테스트 결과
 
+> 이 문서는 실 Harbor로 수행한 **1회성 검증 기록**입니다. 재현 가능한 자동 테스트 방법은 [`migration-test-guide.md`](./migration-test-guide.md)를 참고하세요.
+
 - **테스트 일시**: 2026-06-22
 - **대상 호스트**: `192.168.135.95` (RHEL 9.3, Docker 20.10.16, GPU K8s 컨트롤플레인 노드)
 - **레지스트리 주소**: `cr.makina.rocks` (→ `/etc/hosts`에 `192.168.135.95`로 매핑)
