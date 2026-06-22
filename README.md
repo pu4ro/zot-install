@@ -240,12 +240,17 @@ zot-install/
 ├── README.md             # This document (English)
 ├── README.ko.md          # Korean documentation
 ├── install.sh            # Main installer script
-├── migrate.sh            # Registry migration script
+├── migrate.sh            # Registry migration engine (skopeo/filesystem/oras)
+├── harbor-to-zot-replace.sh # Harbor->zot full replacement (deploy/migrate/verify/cutover)
+├── tune-registry-kernel.sh  # One-shot kernel/network tuning for push stability
 ├── client-setup.sh       # Client node trust setup
 └── docs/                 # Extended documentation
     ├── ARCHITECTURE.md   # System architecture & flow diagrams
     ├── TESTING.md        # Validation approach & recorded reports
-    └── TROUBLESHOOTING.md # Common issues & solutions
+    ├── TROUBLESHOOTING.md # Common issues & solutions
+    ├── harbor-to-zot-replacement.md   # Full replacement guide (scripted + manual, air-gap)
+    ├── harbor-registry-disconnect.md  # Large-push connection drops + kernel tuning
+    └── harbor-to-zot-81-test-report.md # Real-host migration test report
 ```
 
 ## License

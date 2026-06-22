@@ -241,12 +241,17 @@ zot-install/
 ├── README.md             # 영어 문서
 ├── README.ko.md          # 이 문서 (한국어)
 ├── install.sh            # 메인 설치 스크립트
-├── migrate.sh            # 레지스트리 마이그레이션 스크립트
+├── migrate.sh            # 마이그레이션 엔진 (skopeo/filesystem/oras)
+├── harbor-to-zot-replace.sh # Harbor->zot 완전 대체 (deploy/migrate/verify/cutover)
+├── tune-registry-kernel.sh  # push 안정화용 커널/네트워크 튜닝 일괄 적용
 ├── client-setup.sh       # 클라이언트 노드 설정 스크립트
 └── docs/                 # 상세 문서
     ├── ARCHITECTURE.md   # 시스템 아키텍처
     ├── TESTING.md        # 검증 방식 및 테스트 리포트
-    └── TROUBLESHOOTING.md # 문제 해결 가이드
+    ├── TROUBLESHOOTING.md # 문제 해결 가이드
+    ├── harbor-to-zot-replacement.md   # 완전 대체 가이드 (스크립트+수동, airgap)
+    ├── harbor-registry-disconnect.md  # 대용량 push 끊김 + 커널 튜닝
+    └── harbor-to-zot-81-test-report.md # 실 호스트 마이그레이션 테스트 리포트
 ```
 
 ## 참고
